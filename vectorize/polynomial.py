@@ -3,7 +3,8 @@ Example vectorize usage.
 '''
 
 import numpy as np
-from numba import *
+import numba
+from numba import f4, f8
 from numbapro import vectorize
 from timeit import default_timer as time
 import math
@@ -27,12 +28,33 @@ def discriminant(a, b, c):
     return math.sqrt(b ** 2 - 4 * a * c)
 
 
+def run_target(N, target):
+    print '== Target', target
+    vect_discriminant = vectorize([f4(f4, f4, f4), f8(f8, f8, f8)],
+                                target=target)(discriminant)
+
+    A, B, C = generate_input(N, dtype=np.float32)
+    D = np.empty(A.shape, dtype=A.dtype)
+
+    ts = time()
+    D = vect_discriminant(A, B, C)
+    te = time()
+
+    total_time = (te - ts)
+
+    print 'Execution time %.4f' % total_time
+    print 'Throughput %.4f' % (N / total_time)
+
+    if '-verify' in sys.argv[1:]:
+        check_answer(D, A, B, C)
+
+
 def main():
 
-    N = 1e+8 // 2
+    N = 4e+8 // 2
     print 'Data size', N
 
-    targets = ['cpu', 'stream', 'parallel']
+    targets = ['cpu', 'stream', 'parallel', 'gpu']
     
     # run just one target if is specified in the argument
     for t in targets:
@@ -41,26 +63,10 @@ def main():
             break
 
     for target in targets:
-        print '== Target', target
-        vect_discriminant = vectorize([f4(f4, f4, f4), f8(f8, f8, f8)],
-                                    target=target)(discriminant)
-
-        A, B, C = generate_input(N, dtype=np.float32)
-        D = np.empty(A.shape, dtype=A.dtype)
-
-        ts = time()
-        D = vect_discriminant(A, B, C)
-        te = time()
-
-        total_time = (te - ts)
-
-        print 'Execution time %.4f' % total_time
-        print 'Throughput %.4f' % (N / total_time)
-
-
-
-        if '-verify' in sys.argv[1:]:
-            check_answer(D, A, B, C)
+        try:
+            run_target(N,target)
+        except numba.cuda.cudadrv.error.CudaSupportError:
+            print "No CUDA support available on this machine."
 
 
 if __name__ == '__main__':
